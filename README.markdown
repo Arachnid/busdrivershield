@@ -5,6 +5,7 @@ The MotoProtoShield is a stackable Arduino shield for driving low-power DC or
 stepper motors over I2C.
 
 Features:
+
  - 100% stackable. The number of stacked shields you can drive is limited only
    by the available current on the vin (motor) and 5v rails, and the number of
    I2C addresses available.
@@ -29,6 +30,7 @@ diodes provide additional protection against inductive kickback; also included
 are optional power smoothing capacitors and I2C pullups.
 
 Pin assignments for the MCU are as follows:
+
  - OC1A and OC1B connect to the H-Bridge's enable lines,
    permitting PWM control of each motor.
  - PB0-PB2 and PB6 connect to the input sensors for limit switches or quadrature
