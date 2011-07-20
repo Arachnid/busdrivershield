@@ -1,2 +1,7 @@
 *.b#?
 *.s#?
+.DS_Store
+*.eep
+*.elf
+*.hex
+*.o
