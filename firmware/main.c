@@ -1,46 +1,228 @@
+#define F_CPU 1000000UL  // 1 MHz
+
+#include <util/delay.h>
 #include <avr/io.h>
+#include <avr/eeprom.h>
+#include <avr/interrupt.h>
+#include <avr/pgmspace.h>
+#include "register.h"
 #include "usiTwiSlave.h"
 
-// Flags for the status register
-#define STATUS_M1_I1 0
-#define STATUS_M1_I2 1
-#define STATUS_M2_I1 2
-#define STATUS_M2_I2 3
-#define STATUS_INT1 4
-#define STATUS_INT2 5
+#define TRUE 1
+#define FALSE 0
 
-// Flags for the direction register
-#define DIR_M1_CCW 0
-#define DIR_M1_CW 1
-#define DIR_M2_CCW 2
-#define DIR_M2_CW 3
+#define PORT_ENABLE PORTB
+#define DDR_ENABLE DDRB
+#define DD_ENABLE1 DDB4
+#define P_ENABLE1 PB4
+#define DD_ENABLE2 DDB3
+#define P_ENABLE2 PB3
+#define ENABLE_PWM_SETUP() TCCR1A = _BV(WGM10), TCCR1B = _BV(WGM12) | _BV(CS10)
+#define TCCR_ENABLE TCCR1A
+#define COM_ENABLE1 _BV(COM1B1)
+#define COM_ENABLE2 _BV(COM1A1)
+#define OCR_ENABLE1 OCR1B
+#define OCR_ENABLE2 OCR1A
 
-// Flags for the inopts register
-#define INOPT_PULLUP_I1 0
-#define INOPT_PULLUP_I2 1
-#define INOPT_INVERT_I1 2
-#define INOPT_INVERT_I2 3
-#define INOPT_LIMIT_I1 4
-#define INOPT_LIMIT_I2 5
+#define PORT_INPUT PORTB
+const uint8_t input_pins[] = {
+    PB1,
+    PB0,
+    PB2,
+    PB6,
+};
 
-// Flags for the int_masks register
-#define IMASK_LIMIT_M1_I1 0
-#define IMASK_LIMIT_M1_I2 1
-#define IMASK_LIMIT_M2_I1 2
-#define IMASK_LIMIT_M2_I2 3
+#define PORT_DIR PORTD
+const uint8_t direction_pins[] = {
+    PD3,
+    PD2,
+    PD4,
+    PD5,
+};
+#define DDR_DIR DDRD
+#define DD_DIR1 DDD3
+#define DD_DIR2 DDD2
+#define DD_DIR3 DDD4
+#define DD_DIR4 DDD5
 
-union {
-    uint8_t bytes[10];
-    struct {
-        uint8_t slave_addr;
-        uint8_t status;         // Input and interrupt status register
-        uint8_t direction;      // Motor direction register
-        uint8_t reserved;       // Reserved for future use
-        uint8_t speeds[2];      // Motor speeds, 0=off/idle, 255=full speed
-        uint8_t inopts[2];      // Input options/flags registers
-        uint8_t int_masks[2];   // Interrupt masks registers
-    } __attribute__((__packed__)) reg;
-} registers;
+#define PORT_INT PORTD
+#define DDR_INT DDRD
+#define DD_INT1 DDD6
+#define P_INT1 PD6
+#define DD_INT2 DDD1
+#define P_INT2 PD1
 
-int main() {
+typedef void (*register_write_handler)(uint8_t reg, uint8_t *value);
+
+// Predefinitions of read/write handlers so we can reference them
+uint8_t i2c_read(uint8_t reg);
+void i2c_write(uint8_t reg, uint8_t value);
+void main(void) __attribute__((noreturn));
+
+register_t registers;
+// EEPROM copy of registers; updated on write to register 255.
+register_t EEMEM eeprom_registers = {
+    .reg = {
+        .slave_addr = 0x26, // ASCII 'm'
+        .status = 0,
+        .direction = 0,
+        .reserved = 0,
+        .speed = {0, 0},
+        .inopts = {0, 0},
+        .int_mask = {0, 0},
+    }
+};
+uint8_t eeprom_dirty = FALSE;
+
+/* Updates a register with changes specified by an input and bit mapping.
+ * Arguments:
+ *    value: The value to base updates on
+ *    start_bit: The first bit offset in value to iterate over
+ *    end_bit: The last bit offset in value to iterate over
+ *    bitmap: An array mapping bit offsets in value to bit offsets in reg
+ *    reg: The register to update
+ */
+void set_clear_bits(uint8_t value, uint8_t start_bit, uint8_t end_bit,
+                    const uint8_t *bitmap, volatile uint8_t *reg) {
+    uint8_t set_bits = 0;
+    uint8_t clear_bits = 0;
+    for(uint8_t i = start_bit; i <= end_bit; i++) {
+        if(value & _BV(i)) {
+            set_bits |= _BV(bitmap[i]);
+        } else {
+            clear_bits |= _BV(bitmap[i]);
+        }
+    }
+    //*reg = (*reg & !clear_bits) | set_bits;
+    *reg &= ~clear_bits;
+    *reg |= set_bits;
+}
+
+void write_slave_addr(uint8_t reg, uint8_t *value) {
+    usiTwiSlaveInit(*value, i2c_read, i2c_write);
+}
+
+void write_status(uint8_t reg, uint8_t *value) {
+    // Clear interrupt pins if requested
+    uint8_t clear_mask = 0;
+    if(!(_BV(STATUS_INT1) & *value))
+        clear_mask |= _BV(P_INT1);
+    if(!(_BV(STATUS_INT2) & *value))
+        clear_mask |= _BV(P_INT2);
+    PORT_INT &= ~clear_mask;
+    
+    // No writing to input bits, and interrupt bits can only be cleared
+    int value_mask = *value | ~(_BV(STATUS_INT1) | _BV(STATUS_INT2));
+    *value = value_mask & registers.reg.status;
+}
+
+void write_direction(uint8_t reg, uint8_t *value) {
+    // Mask out unused bits
+    *value &= _BV(DIR_M1_CCW) | _BV(DIR_M1_CW) |
+              _BV(DIR_M2_CCW) | _BV(DIR_M2_CW);
+    
+    // Set outputs as required
+    set_clear_bits(*value, DIR_M1_CCW, DIR_M2_CW, direction_pins, &PORT_DIR);
+}
+
+void write_reserved(uint8_t reg, uint8_t *value) {
+    //*value = 0;
+}
+
+void write_speed(uint8_t reg, uint8_t *value) {
+    uint8_t tccr; // TCCR register bitmask to activate the specified motor
+    volatile uint16_t *ocr; // Register to set PWM duty cycle for specified motor
+
+    if((reg & 1) == 0) {
+        // Motor 1
+        tccr = COM_ENABLE1;
+        ocr = &OCR_ENABLE1;
+    } else {
+        // Motor 2
+        tccr = COM_ENABLE2;
+        ocr = &OCR_ENABLE2;
+    }
+
+    if(value == 0) {
+        // Disable PWM for constant 0
+        TCCR_ENABLE &= ~tccr;
+    } else {
+        // Enable PWM and set duty cycle
+        TCCR_ENABLE |= tccr;
+        *ocr = *value;
+    }
+}
+
+void write_inopts(uint8_t reg, uint8_t *value) {
+    set_clear_bits(*value, INOPT_PULLUP_I1, INOPT_PULLUP_I2,
+                   input_pins + ((reg & 1)?2:0), &PORT_INPUT);
+}
+
+void write_int_mask(uint8_t reg, uint8_t *value) {
+}
+
+const register_write_handler write_handlers[] = {
+    write_slave_addr,
+    write_status,
+    write_direction,
+    write_reserved,
+    write_speed,
+    write_speed,
+    write_inopts,
+    write_inopts,
+    write_int_mask,
+    write_int_mask,
+};
+
+uint8_t i2c_read(uint8_t reg) {
+    if(reg < NUM_REGISTERS) {
+        return registers.bytes[reg];
+    } else {
+        return 0;
+    }
+}
+
+void i2c_write(uint8_t reg, uint8_t value) {
+    if(reg < NUM_REGISTERS) {
+        write_handlers[reg](reg, &value);
+        registers.bytes[reg] = value;
+    } else if(reg == 255) {
+        // Update eeprom (asynchronously, so we don't block the interrupt).
+        eeprom_dirty = TRUE;
+    } else {
+        // Invalid register - do nothing.
+    }
+}
+
+void ioinit(void) {
+    // Set the enable pins as outputs
+    DDR_ENABLE |= _BV(DD_ENABLE1) | _BV(DD_ENABLE2);
+    // Setup PWM: Fast PWM mode, 8-bit, no prescaling. Don't enable it yet.
+    ENABLE_PWM_SETUP();
+    // Set the direction pins as outputs
+    DDR_DIR |= _BV(DD_DIR1) | _BV(DD_DIR2) | _BV(DD_DIR3) | _BV(DD_DIR4);
+    // Set the interrupt pins as outputs
+    DDR_INT |= _BV(DD_INT1) | _BV(DD_INT2);
+}
+
+void read_registers(void) {
+    // Initialize from eeprom
+    eeprom_read_block(&registers, &eeprom_registers, sizeof(registers));
+    // Run all the write funcs in order to initialize the device
+    for(int i = 0; i < NUM_REGISTERS; i++)
+        write_handlers[i](i, &registers.bytes[i]);
+}
+
+void main(void) {
+    ioinit();
+    read_registers();
+    // Enable interrupts
+    sei();
+    
+    for(;;) {
+        if(eeprom_dirty) {
+            eeprom_write_block(&registers, &eeprom_registers, sizeof(registers));
+            eeprom_dirty = FALSE;
+        }
+    }
 }
