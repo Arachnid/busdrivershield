@@ -11,12 +11,15 @@
 #define TRUE 1
 #define FALSE 0
 
-#define PORT_ENABLE PORTB
+#define copy_bit(from_reg, from_bit, to_reg, to_bit) if(from_reg & _BV(from_bit)) { \
+    to_reg &= _BV(to_bit); \
+} else { \
+    to_reg |= ~_BV(to_bit); \
+}
+
 #define DDR_ENABLE DDRB
 #define DD_ENABLE1 DDB4
-#define P_ENABLE1 PB4
 #define DD_ENABLE2 DDB3
-#define P_ENABLE2 PB3
 #define ENABLE_PWM_SETUP() TCCR1A = _BV(WGM10), TCCR1B = _BV(WGM12) | _BV(CS10)
 #define TCCR_ENABLE TCCR1A
 #define COM_ENABLE1 _BV(COM1B1)
@@ -25,20 +28,17 @@
 #define OCR_ENABLE2 OCR1A
 
 #define PORT_INPUT PORTB
-const uint8_t input_pins[] = {
-    PB1,
-    PB0,
-    PB2,
-    PB6,
-};
+#define P_INPUT_M1_I1 PB1
+#define P_INPUT_M1_I2 PB0
+#define P_INPUT_M2_I1 PB2
+#define P_INPUT_M2_I2 PB6
 
 #define PORT_DIR PORTD
-const uint8_t direction_pins[] = {
-    PD3,
-    PD2,
-    PD4,
-    PD5,
-};
+#define P_DIR_M1_CCW PD3
+#define P_DIR_M1_CW PD2
+#define P_DIR_M2_CCW PD4
+#define P_DIR_M2_CW PD5
+
 #define DDR_DIR DDRD
 #define DD_DIR1 DDD3
 #define DD_DIR2 DDD2
@@ -63,7 +63,7 @@ register_t registers;
 // EEPROM copy of registers; updated on write to register 255.
 register_t EEMEM eeprom_registers = {
     .reg = {
-        .slave_addr = 0x26, // ASCII 'm'
+        .slave_addr = 0x26,
         .status = 0,
         .direction = 0,
         .reserved = 0,
@@ -72,31 +72,8 @@ register_t EEMEM eeprom_registers = {
         .int_mask = {0, 0},
     }
 };
-uint8_t eeprom_dirty = FALSE;
 
-/* Updates a register with changes specified by an input and bit mapping.
- * Arguments:
- *    value: The value to base updates on
- *    start_bit: The first bit offset in value to iterate over
- *    end_bit: The last bit offset in value to iterate over
- *    bitmap: An array mapping bit offsets in value to bit offsets in reg
- *    reg: The register to update
- */
-void set_clear_bits(uint8_t value, uint8_t start_bit, uint8_t end_bit,
-                    const uint8_t *bitmap, volatile uint8_t *reg) {
-    uint8_t set_bits = 0;
-    uint8_t clear_bits = 0;
-    for(uint8_t i = start_bit; i <= end_bit; i++) {
-        if(value & _BV(i)) {
-            set_bits |= _BV(bitmap[i]);
-        } else {
-            clear_bits |= _BV(bitmap[i]);
-        }
-    }
-    //*reg = (*reg & !clear_bits) | set_bits;
-    *reg &= ~clear_bits;
-    *reg |= set_bits;
-}
+uint8_t eeprom_dirty = FALSE;
 
 void write_slave_addr(uint8_t reg, uint8_t *value) {
     usiTwiSlaveInit(*value, i2c_read, i2c_write);
@@ -104,12 +81,10 @@ void write_slave_addr(uint8_t reg, uint8_t *value) {
 
 void write_status(uint8_t reg, uint8_t *value) {
     // Clear interrupt pins if requested
-    uint8_t clear_mask = 0;
     if(!(_BV(STATUS_INT1) & *value))
-        clear_mask |= _BV(P_INT1);
+        PORT_INT &= ~_BV(P_INT1);
     if(!(_BV(STATUS_INT2) & *value))
-        clear_mask |= _BV(P_INT2);
-    PORT_INT &= ~clear_mask;
+        PORT_INT &= ~_BV(P_INT2);
     
     // No writing to input bits, and interrupt bits can only be cleared
     int value_mask = *value | ~(_BV(STATUS_INT1) | _BV(STATUS_INT2));
@@ -122,7 +97,10 @@ void write_direction(uint8_t reg, uint8_t *value) {
               _BV(DIR_M2_CCW) | _BV(DIR_M2_CW);
     
     // Set outputs as required
-    set_clear_bits(*value, DIR_M1_CCW, DIR_M2_CW, direction_pins, &PORT_DIR);
+    copy_bit(*value, DIR_M1_CCW, PORT_DIR, P_DIR_M1_CCW);
+    copy_bit(*value, DIR_M1_CW, PORT_DIR, P_DIR_M1_CW);
+    copy_bit(*value, DIR_M2_CCW, PORT_DIR, P_DIR_M2_CCW);
+    copy_bit(*value, DIR_M2_CW, PORT_DIR, P_DIR_M2_CW);
 }
 
 void write_reserved(uint8_t reg, uint8_t *value) {
@@ -154,8 +132,13 @@ void write_speed(uint8_t reg, uint8_t *value) {
 }
 
 void write_inopts(uint8_t reg, uint8_t *value) {
-    set_clear_bits(*value, INOPT_PULLUP_I1, INOPT_PULLUP_I2,
-                   input_pins + ((reg & 1)?2:0), &PORT_INPUT);
+    if(reg & 1) {
+        copy_bit(*value, INOPT_PULLUP_I1, PORT_INPUT, P_INPUT_M2_I1);
+        copy_bit(*value, INOPT_PULLUP_I2, PORT_INPUT, P_INPUT_M2_I2);
+    } else {
+        copy_bit(*value, INOPT_PULLUP_I1, PORT_INPUT, P_INPUT_M1_I1);
+        copy_bit(*value, INOPT_PULLUP_I2, PORT_INPUT, P_INPUT_M1_I2);
+    }
 }
 
 void write_int_mask(uint8_t reg, uint8_t *value) {
