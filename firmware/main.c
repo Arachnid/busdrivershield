@@ -11,10 +11,10 @@
 #define TRUE 1
 #define FALSE 0
 
-#define copy_bit(from_reg, from_bit, to_reg, to_bit) if(from_reg & _BV(from_bit)) { \
-    to_reg &= _BV(to_bit); \
+#define copy_bit(from_reg, from_bit, to_reg, to_bit) if((from_reg) & _BV(from_bit)) { \
+    to_reg |= _BV(to_bit); \
 } else { \
-    to_reg |= ~_BV(to_bit); \
+    to_reg &= ~_BV(to_bit); \
 }
 
 #define DDR_ENABLE DDRB
