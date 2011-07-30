@@ -32,6 +32,7 @@
 #define P_INPUT_M1_I2 PB0
 #define P_INPUT_M2_I1 PB2
 #define P_INPUT_M2_I2 PB6
+#define PCINT_MASK _BV(PCINT0) | _BV(PCINT1) | _BV(PCINT2) | _BV(PCINT6)
 
 #define PORT_DIR PORTD
 #define P_DIR_M1_CCW PD3
@@ -47,10 +48,10 @@
 
 #define PORT_INT PORTD
 #define DDR_INT DDRD
-#define DD_INT1 DDD6
-#define P_INT1 PD6
-#define DD_INT2 DDD1
-#define P_INT2 PD1
+#define DD_INT0 DDD6
+#define P_INT0 PD6
+#define DD_INT1 DDD1
+#define P_INT1 PD1
 
 typedef void (*register_write_handler)(uint8_t reg, uint8_t *value);
 
@@ -81,13 +82,13 @@ void write_slave_addr(uint8_t reg, uint8_t *value) {
 
 void write_status(uint8_t reg, uint8_t *value) {
     // Clear interrupt pins if requested
+    if(!(_BV(STATUS_INT0) & *value))
+        PORT_INT &= ~_BV(P_INT0);
     if(!(_BV(STATUS_INT1) & *value))
         PORT_INT &= ~_BV(P_INT1);
-    if(!(_BV(STATUS_INT2) & *value))
-        PORT_INT &= ~_BV(P_INT2);
     
     // No writing to input bits, and interrupt bits can only be cleared
-    int value_mask = *value | ~(_BV(STATUS_INT1) | _BV(STATUS_INT2));
+    int value_mask = *value | ~(_BV(STATUS_INT0) | _BV(STATUS_INT1));
     *value = value_mask & registers.reg.status;
 }
 
@@ -177,6 +178,61 @@ void i2c_write(uint8_t reg, uint8_t value) {
     }
 }
 
+void update_input_pin(uint8_t pin, uint8_t input_id) {
+    // This function makes the following assumptions:
+    // 1) There are exactly 4 inputs
+    // 2) The bit position for each input is the same in the STATUS and IMASK registers
+    // 3) Bit 1 of input_id can be used to choose which inopts register to select
+    // 4) Bit 0 of input_id can be used to choose which offset into the inopts
+    //    register to use for the invert and limit bits.
+    // 5) The bit position for each input matches the bit in the direction register
+    //    it should clear if limit behaviour is configured.
+    
+    // Get the contents of the inopts register for this input (assumption 3)
+    uint8_t inopts = registers.reg.inopts[input_id >> 1];
+
+    // Get the pin value
+    uint8_t val = (PORT_INPUT >> pin) & 1;
+
+    // If the invert flag is set, invert the input (assumption 4)
+    if(inopts & _BV(INOPT_INVERT_I1 + (input_id & 1))) {
+        val = 1 - val;
+    }
+    
+    // Update the status register (assumption 2)
+    if(val) {
+        registers.reg.status |= _BV(input_id);
+    } else {
+        registers.reg.status &= ~_BV(input_id);
+    }
+    
+    // Stop the motor if limits are set (assumptions 4 & 5)
+    if(val && (inopts & _BV(INOPT_LIMIT_I1 + (input_id & 1)))) {
+        if(registers.reg.direction & _BV(input_id)) {
+            registers.reg.direction &= ~_BV(input_id);
+            write_direction(2, &registers.reg.direction);
+        }
+    }
+    
+    // Signal an interrupt if requested
+    if(registers.reg.int_mask[0] & _BV(input_id)) {
+        registers.reg.status |= _BV(STATUS_INT0);
+        PORT_INT |= _BV(P_INT0);
+    }
+    if(registers.reg.int_mask[1] & _BV(input_id)) {
+        registers.reg.status |= _BV(STATUS_INT1);
+        PORT_INT |= _BV(P_INT1);
+    }
+}
+
+ISR(PCINT_vect) {
+    // One of the input pins has changed value.
+    update_input_pin(P_INPUT_M1_I1, 0);
+    update_input_pin(P_INPUT_M1_I2, 1);
+    update_input_pin(P_INPUT_M2_I1, 2);
+    update_input_pin(P_INPUT_M2_I2, 3);
+}
+
 void ioinit(void) {
     // Set the enable pins as outputs
     DDR_ENABLE |= _BV(DD_ENABLE1) | _BV(DD_ENABLE2);
@@ -185,7 +241,14 @@ void ioinit(void) {
     // Set the direction pins as outputs
     DDR_DIR |= _BV(DD_DIR1) | _BV(DD_DIR2) | _BV(DD_DIR3) | _BV(DD_DIR4);
     // Set the interrupt pins as outputs
-    DDR_INT |= _BV(DD_INT1) | _BV(DD_INT2);
+    DDR_INT |= _BV(DD_INT0) | _BV(DD_INT1);
+}
+
+void configure_interrupts(void) {
+    // Enable the pin change interrupt for the relevant pins
+    PCMSK |= PCINT_MASK;
+    // Turn on the pin change interrupt globally
+    GIMSK |= _BV(PCIE);
 }
 
 void read_registers(void) {
@@ -198,6 +261,7 @@ void read_registers(void) {
 
 void main(void) {
     ioinit();
+    configure_interrupts();
     read_registers();
     // Enable interrupts
     sei();

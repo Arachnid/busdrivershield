@@ -3,8 +3,8 @@
 #define STATUS_M1_I2 1
 #define STATUS_M2_I1 2
 #define STATUS_M2_I2 3
-#define STATUS_INT1 4
-#define STATUS_INT2 5
+#define STATUS_INT0 4
+#define STATUS_INT1 5
 
 // Flags for the direction register
 #define DIR_M1_CCW 0
