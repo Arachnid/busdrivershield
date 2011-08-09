@@ -83,9 +83,9 @@ void write_slave_addr(uint8_t reg, uint8_t *value) {
 void write_status(uint8_t reg, uint8_t *value) {
     // Clear interrupt pins if requested
     if(!(_BV(STATUS_INT0) & *value))
-        PORT_INT &= ~_BV(P_INT0);
+        DDR_INT &= ~_BV(DD_INT0);
     if(!(_BV(STATUS_INT1) & *value))
-        PORT_INT &= ~_BV(P_INT1);
+        DDR_INT &= ~_BV(DD_INT1);
     
     // No writing to input bits, and interrupt bits can only be cleared
     int value_mask = *value | ~(_BV(STATUS_INT0) | _BV(STATUS_INT1));
@@ -217,11 +217,11 @@ void update_input_pin(uint8_t pin, uint8_t input_id) {
     // Signal an interrupt if requested
     if(registers.reg.int_mask[0] & _BV(input_id)) {
         registers.reg.status |= _BV(STATUS_INT0);
-        PORT_INT |= _BV(P_INT0);
+        DDR_INT |= _BV(DD_INT0);
     }
     if(registers.reg.int_mask[1] & _BV(input_id)) {
         registers.reg.status |= _BV(STATUS_INT1);
-        PORT_INT |= _BV(P_INT1);
+        DDR_INT |= _BV(DD_INT1);
     }
 }
 
@@ -240,8 +240,6 @@ void ioinit(void) {
     ENABLE_PWM_SETUP();
     // Set the direction pins as outputs
     DDR_DIR |= _BV(DD_DIR1) | _BV(DD_DIR2) | _BV(DD_DIR3) | _BV(DD_DIR4);
-    // Set the interrupt pins as outputs
-    DDR_INT |= _BV(DD_INT0) | _BV(DD_INT1);
 }
 
 void configure_interrupts(void) {
