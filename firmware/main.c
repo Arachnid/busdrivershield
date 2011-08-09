@@ -74,7 +74,7 @@ register_t EEMEM eeprom_registers = {
     }
 };
 
-uint8_t eeprom_dirty = FALSE;
+volatile uint8_t eeprom_dirty = FALSE;
 
 void write_slave_addr(uint8_t reg, uint8_t *value) {
     usiTwiSlaveInit(*value, i2c_read, i2c_write);
@@ -271,5 +271,16 @@ void main(void) {
             eeprom_write_block(&registers, &eeprom_registers, sizeof(registers));
             eeprom_dirty = FALSE;
         }
+        registers.reg.speed[1] = 0xff;
+        write_speed(4, &registers.reg.speed[1]);
+        registers.reg.direction = 0x04;
+        write_direction(2, &registers.reg.direction);
+        _delay_ms(1000);
+        registers.reg.direction = 0x08;
+        write_direction(2, &registers.reg.direction);
+        _delay_ms(1000);
+        registers.reg.direction = 0x00;
+        write_direction(2, &registers.reg.direction);
+        _delay_ms(1000);
     }
 }
