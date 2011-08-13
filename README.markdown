@@ -124,7 +124,7 @@ port for the relevant motor low, while setting it to 255 holds it high.
 Intermediate values cause a PWM waveform to be output with a corresponding
 duty-cycle.
 
-### Registers 5 & 6: INOPTS
+### Registers 6 & 7: INOPTS
 
 <table>
   <tr><th>7</th><th>6</th><th>5</th><th>4</th><th>3</th><th>2</th><th>1</th><th>0</th></tr>
@@ -151,7 +151,7 @@ in the STATUS register.
 PULLUP_I1 and PULLUP_I2 control the pullups on each input pin. If the relevant
 bit is set, pullups will be enabled for that input pin.
 
-### Registers 6 & 7: IMASK
+### Registers 8 & 9: IMASK
 
 <table>
   <tr><th>7</th><th>6</th><th>5</th><th>4</th><th>3</th><th>2</th><th>1</th><th>0</th></tr>
