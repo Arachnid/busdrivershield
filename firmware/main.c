@@ -122,7 +122,7 @@ void write_speed(uint8_t reg, uint8_t *value) {
         ocr = &OCR_ENABLE2;
     }
 
-    if(value == 0) {
+    if(*value == 0) {
         // Disable PWM for constant 0
         TCCR_ENABLE &= ~tccr;
     } else {
