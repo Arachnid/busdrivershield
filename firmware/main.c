@@ -28,23 +28,23 @@
 #define OCR_ENABLE2 OCR1A
 
 #define PORT_INPUT PORTB
-#define P_INPUT_M1_I1 PB1
-#define P_INPUT_M1_I2 PB0
-#define P_INPUT_M2_I1 PB2
-#define P_INPUT_M2_I2 PB6
+#define PIN_INPUT PINB
+#define P_INPUT_M1_I1 PB6
+#define P_INPUT_M1_I2 PB2
+#define P_INPUT_M2_I1 PB0
+#define P_INPUT_M2_I2 PB1
 #define PCINT_MASK _BV(PCINT0) | _BV(PCINT1) | _BV(PCINT2) | _BV(PCINT6)
 
 #define PORT_DIR PORTD
 #define P_DIR_M1_CCW PD3
 #define P_DIR_M1_CW PD2
-#define P_DIR_M2_CCW PD4
-#define P_DIR_M2_CW PD5
-
+#define P_DIR_M2_CCW PD5
+#define P_DIR_M2_CW PD4
 #define DDR_DIR DDRD
 #define DD_DIR1 DDD3
 #define DD_DIR2 DDD2
-#define DD_DIR3 DDD4
-#define DD_DIR4 DDD5
+#define DD_DIR3 DDD5
+#define DD_DIR4 DDD4
 
 #define PORT_INT PORTD
 #define DDR_INT DDRD
@@ -192,11 +192,11 @@ void update_input_pin(uint8_t pin, uint8_t input_id) {
     uint8_t inopts = registers.reg.inopts[input_id >> 1];
 
     // Get the pin value
-    uint8_t val = (PORT_INPUT >> pin) & 1;
+    uint8_t val = PIN_INPUT & _BV(pin);
 
     // If the invert flag is set, invert the input (assumption 4)
     if(inopts & _BV(INOPT_INVERT_I1 + (input_id & 1))) {
-        val = 1 - val;
+        val = !val;
     }
     
     // Update the status register (assumption 2)
@@ -225,12 +225,16 @@ void update_input_pin(uint8_t pin, uint8_t input_id) {
     }
 }
 
-ISR(PCINT_vect) {
-    // One of the input pins has changed value.
+void update_inputs() {
     update_input_pin(P_INPUT_M1_I1, 0);
     update_input_pin(P_INPUT_M1_I2, 1);
     update_input_pin(P_INPUT_M2_I1, 2);
     update_input_pin(P_INPUT_M2_I2, 3);
+}   
+
+ISR(PCINT_vect) {
+    // One of the input pins has changed value.
+    update_inputs();
 }
 
 void ioinit(void) {
