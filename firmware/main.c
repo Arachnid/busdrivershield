@@ -96,6 +96,20 @@ void write_direction(uint8_t reg, uint8_t *value) {
     // Mask out unused bits
     *value &= _BV(DIR_M1_CCW) | _BV(DIR_M1_CW) |
               _BV(DIR_M2_CCW) | _BV(DIR_M2_CW);
+
+    // Unset any bits prohibited by limit switches
+    if((registers.reg.status | _BV(STATUS_M1_I1)) &&
+       (registers.reg.inopts[0] | _BV(INOPT_LIMIT_I1)))
+        *value &= ~_BV(DIR_M1_CCW);
+    if((registers.reg.status | _BV(STATUS_M1_I2)) &&
+       (registers.reg.inopts[0] | _BV(INOPT_LIMIT_I2)))
+        *value &= ~_BV(DIR_M1_CW);
+    if((registers.reg.status | _BV(STATUS_M2_I1)) &&
+       (registers.reg.inopts[1] | _BV(INOPT_LIMIT_I1)))
+        *value &= ~_BV(DIR_M2_CCW);
+    if((registers.reg.status | _BV(STATUS_M2_I2)) &&
+       (registers.reg.inopts[1] | _BV(INOPT_LIMIT_I2)))
+        *value &= ~_BV(DIR_M2_CW);
     
     // Set outputs as required
     copy_bit(*value, DIR_M1_CCW, PORT_DIR, P_DIR_M1_CCW);
@@ -140,6 +154,9 @@ void write_inopts(uint8_t reg, uint8_t *value) {
         copy_bit(*value, INOPT_PULLUP_I1, PORT_INPUT, P_INPUT_M1_I1);
         copy_bit(*value, INOPT_PULLUP_I2, PORT_INPUT, P_INPUT_M1_I2);
     }
+    
+    // Update input pin status, limits etc
+    update_inputs();
 }
 
 void write_int_mask(uint8_t reg, uint8_t *value) {
