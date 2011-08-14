@@ -1,7 +1,7 @@
-MotoProtoShield
+BusDriver Shield
 ===============
 
-The MotoProtoShield is a stackable Arduino shield for driving low-power DC or
+The BusDriver Shield is a stackable Arduino shield for driving low-power DC or
 stepper motors over I2C.
 
 Features:
@@ -23,7 +23,7 @@ Features:
 Hardware
 --------
 
-The MotoProtoShield has two main components: An ATTiny2313 MCU, and an SN754410
+The BusDriver Shield has two main components: An ATTiny2313 MCU, and an SN754410
 quad half H-Bridge. The MCU takes care of the logic and communicates over the
 I2C bus, while the H-Bridge takes care of motor driving. Optional kickback
 diodes provide additional protection against inductive kickback; also included
