@@ -173,7 +173,7 @@ Each of the LIMIT_Ma_Ib bits controls whether the input will be triggered when
 the corresponding input pin becomes high (after inversion if INOPTS[a].INVERT_Ib
 is set).
 
-### Register 255: STORE
+### Register 127: STORE
 
 Normally, changes made to registers persist only until power is removed. On each
 startup, default values for each register are read from the processor's EEPROM.

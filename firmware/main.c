@@ -170,7 +170,7 @@ void i2c_write(uint8_t reg, uint8_t value) {
     if(reg < NUM_REGISTERS) {
         write_handlers[reg](reg, &value);
         registers.bytes[reg] = value;
-    } else if(reg == 255) {
+    } else if(reg == 127) {
         // Update eeprom (asynchronously, so we don't block the interrupt).
         eeprom_dirty = TRUE;
     } else {
@@ -256,6 +256,7 @@ void configure_interrupts(void) {
 void read_registers(void) {
     // Initialize from eeprom
     eeprom_read_block(&registers, &eeprom_registers, sizeof(registers));
+
     // Run all the write funcs in order to initialize the device
     for(int i = 0; i < NUM_REGISTERS; i++)
         write_handlers[i](i, &registers.bytes[i]);
